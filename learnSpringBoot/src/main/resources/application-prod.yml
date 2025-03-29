@@ -1,0 +1,18 @@
+spring: # 배포를 위한 설정
+  datasource:
+    url: jdbc:mysql://prod-db-host:3306/performance  # 운영용 DB
+    username: prod_user
+    password: prod_pass
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate  #  운영은 테이블 자동 생성 X
+    show-sql: false
+    database-platform: org.hibernate.dialect.MySQL8Dialect
+
+springdoc:
+  api-docs:
+    enabled: false     #  운영에서는 Swagger 비활성화
+  swagger-ui:
+    enabled: false
