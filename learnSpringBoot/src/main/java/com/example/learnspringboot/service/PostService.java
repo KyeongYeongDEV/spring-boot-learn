@@ -15,7 +15,7 @@ public class PostService {
     private final PostRepository postRepository;
     private final RedisService redisService;
 
-    public List<Post> getAllPost() {
+    public List<Post> getAllPosts() {
         return postRepository.findAll();
     }
 
