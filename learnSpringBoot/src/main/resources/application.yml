@@ -1,18 +1,10 @@
-spring: # 로컬에서 개발을 위한 설정
-  datasource:
-    url: jdbc:mysql://localhost:3306/performance  # 개발용 DB
-    username: root
-    password: root
-    driver-class-name: com.mysql.cj.jdbc.Driver
+spring:
+  profiles:
+    active: dev
 
-    jpa:
-      hibernate:
-        ddl-auto: update  # 테이블 자동 생성/수정
-      show-sql: true  # 콘솔에 SQL 출력
-      database-platform: org.hibernate.dialect.MySQL8Dialect
 
 springdoc:
   api-docs:
-    enabled: true     # Swagger API 문서 사용
+    enabled: true
   swagger-ui:
-    enabled: true     # Swagger UI 사용
+    enabled: true

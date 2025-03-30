@@ -1,4 +1,10 @@
 spring: # 로컬에서 개발을 위한 설정
+  cache:
+    type: redis
+    data:
+      redis:
+        host: localhost
+        port: 6379
   datasource:
     url: jdbc:mysql://localhost:3306/performance  # 개발용 DB
     username: root
