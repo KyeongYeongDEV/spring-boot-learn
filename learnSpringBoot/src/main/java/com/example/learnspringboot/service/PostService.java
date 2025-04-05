@@ -14,15 +14,19 @@ import java.util.List;
 public class PostService {
     private final PostRepository postRepository;
     private final RedisService redisService;
+    private final KafkaProducerService kafkaProducerService;
+
+    public Post createPost(Post post) {
+        Post savedPost = postRepository.save(post);;
+        kafkaProducerService.sendMessage("게시글 등록됨 : ID = " + savedPost.getId());
+
+        return savedPost;
+    }
 
     public List<Post> getAllPosts() {
         return postRepository.findAll();
     }
 
-    public Post createPost(Post post) {
-        Post savedPost = postRepository.save(post);
-        return  savedPost; // 캐시에 미리 저장을 해도 되지만, 조회시 저장을 해도 충분하다
-    }
 
     public String getPost(Long postId){
         String redisKey = "post_" + postId;
