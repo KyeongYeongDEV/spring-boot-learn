@@ -1,11 +1,13 @@
 package com.example.learnspringboot.controller;
 
 import com.example.learnspringboot.entity.Post;
+import com.example.learnspringboot.service.KafkaProducerService;
 import com.example.learnspringboot.service.PostService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
@@ -13,6 +15,7 @@ import java.util.List;
 public class PostController {
 
     private final PostService postService;
+    private final KafkaProducerService kafkaProducerService;
 
     // 전체 게시글 조회
     @GetMapping
@@ -24,6 +27,13 @@ public class PostController {
     @GetMapping("/{postId}")
     public String getPost(@PathVariable Long postId) {
         return postService.getPost(postId);
+    }
+
+    @PostMapping("/kafka")
+    public String testKafka(@RequestBody Map<String, String> payload) {
+        String message = payload.get("message");
+        kafkaProducerService.sendMessage(message);
+        return "메세지 전송 완료";
     }
 
     // 게시글 생성
