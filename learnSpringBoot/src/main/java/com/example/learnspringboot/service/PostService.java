@@ -1,53 +1,45 @@
 package com.example.learnspringboot.service;
 
 import com.example.learnspringboot.entity.Post;
+import com.example.learnspringboot.service.KafkaProducerService;
 import com.example.learnspringboot.repository.PostRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
 public class PostService {
+
     private final PostRepository postRepository;
-    private final RedisService redisService;
     private final KafkaProducerService kafkaProducerService;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     public Post createPost(Post post) {
-        Post savedPost = postRepository.save(post);;
-        kafkaProducerService.sendMessage("게시글 등록됨 : ID = " + savedPost.getId());
-
+        Post savedPost = postRepository.save(post);
+        kafkaProducerService.send(savedPost); // Kafka에 발행
         return savedPost;
     }
 
-    public List<Post> getAllPosts() {
-        return postRepository.findAll();
-    }
+    public String getPost(Long postId) {
+        String key = "post_" + postId;
+        Object cached = redisTemplate.opsForValue().get(key);
 
-
-    public String getPost(Long postId){
-        String redisKey = "post_" + postId;
-
-        // Redis 먼저 조회
-        String cachedValue = redisService.getData(redisKey);
-        if(cachedValue != null) {
-            System.out.println("Redis에서 조회됨");
-            return cachedValue;
+        if (cached != null) {
+            System.out.println("✅ Redis 조회 성공");
+            return cached.toString();
         }
-        //없으면 디비 조회
-        Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("게시글이 존재하지 않습니다."));
-        String value = "DB에서 조회된 게시글 : " + post.getId() + " / " + post.getId();
 
-        redisService.setDataWithTTL(redisKey,value,60);
-        return value;
-    }
+        System.out.println("🔄 Redis 미스 → DB 조회");
+        Optional<Post> postOpt = postRepository.findById(postId);
+        if (postOpt.isPresent()) {
+            redisTemplate.opsForValue().set(key, postOpt.get(), 60, TimeUnit.SECONDS);
+            return postOpt.get().toString();
+        }
 
-    public void invalidatePostCache(Long postId){
-        String redisKey = "post_" + postId;
-        redisService.deleteData(redisKey);
+        throw new IllegalArgumentException("Post not found");
     }
 }
