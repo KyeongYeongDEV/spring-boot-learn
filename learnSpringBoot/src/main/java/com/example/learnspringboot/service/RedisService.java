@@ -10,24 +10,47 @@ import java.util.concurrent.TimeUnit;
 @Service
 @RequiredArgsConstructor
 public class RedisService {
-    private final RedisTemplate<String, Object> redisTemplate;
 
-    /**
-     *
-     * @param key //Reids Key
-     * @param value
-     * @param ttl //유효시간 (초단위)
-     */
-    public void setDataWithTTL(String key, String value, long ttl) {
-        ValueOperations<String, Object> ops = redisTemplate.opsForValue();
-        ops.set(key, value, ttl, TimeUnit.SECONDS); //TTL 적용
+    private final RedisTemplate<String, String> redisTemplate;
+
+    public void setData(String key, String value) {
+        redisTemplate.opsForValue().set(key, value);
+        System.out.println("Redis 저장 완료 : " + key + "=>" + value);
     }
+
 
     public String getData(String key) {
-        return (String) redisTemplate.opsForValue().get(key);
+        return redisTemplate.opsForValue().get(key);
     }
 
-    public void deleteData(String key) {
-        redisTemplate.delete(key);
-    }
+
+
+
+
+
+
+
+
+
+
+//    private final RedisTemplate<String, Object> redisTemplate;
+//
+//    /**
+//     *
+//     * @param key //Reids Key
+//     * @param value
+//     * @param ttl //유효시간 (초단위)
+//     */
+//    public void setDataWithTTL(String key, String value, long ttl) {
+//        ValueOperations<String, Object> ops = redisTemplate.opsForValue();
+//        ops.set(key, value, ttl, TimeUnit.SECONDS); //TTL 적용
+//    }
+//
+//    public String getData(String key) {
+//        return (String) redisTemplate.opsForValue().get(key);
+//    }
+//
+//    public void deleteData(String key) {
+//        redisTemplate.delete(key);
+//    }
 }
