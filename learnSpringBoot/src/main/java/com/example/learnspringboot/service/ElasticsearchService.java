@@ -1,7 +1,7 @@
 package com.example.learnspringboot.service;
 
 import com.example.learnspringboot.entity.Post;
-import com.example.learnspringboot.repository.PostElasticsearchRepository;
+import com.example.learnspringboot.repository.elastic.PostElasticsearchRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 

@@ -1,8 +1,7 @@
 package com.example.learnspringboot.service;
 
 import com.example.learnspringboot.entity.Post;
-import com.example.learnspringboot.service.KafkaProducerService;
-import com.example.learnspringboot.repository.PostRepository;
+import com.example.learnspringboot.repository.jpa.PostRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -17,10 +16,12 @@ public class PostService {
     private final PostRepository postRepository;
     private final KafkaProducerService kafkaProducerService;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final ElasticsearchService elasticsearchService;
 
     public Post createPost(Post post) {
         Post savedPost = postRepository.save(post);
         kafkaProducerService.send(savedPost); // Kafka에 발행
+        elasticsearchService.saveToElasticsearch(savedPost); // ElasticSearch에 저장
         return savedPost;
     }
 

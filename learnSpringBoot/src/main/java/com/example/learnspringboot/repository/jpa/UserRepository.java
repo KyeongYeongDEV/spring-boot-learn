@@ -1,4 +1,4 @@
-package com.example.learnspringboot.repository;
+package com.example.learnspringboot.repository.jpa;
 
 import com.example.learnspringboot.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;

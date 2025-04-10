@@ -1,7 +1,7 @@
 package com.example.learnspringboot.service;
 
 import com.example.learnspringboot.entity.User;
-import com.example.learnspringboot.repository.UserRepository;
+import com.example.learnspringboot.repository.jpa.UserRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
