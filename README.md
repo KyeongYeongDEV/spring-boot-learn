@@ -524,3 +524,111 @@ GET /posts_kor/_analyze
 - 게시글을 책처럼 Elasticsearch라는 도서관에 저장한다.
 - Kibana라는 서사한테 물어보면 금방 찾아준다.
 - 실시간으로 저장하고, 빠르게 검색하는데 최고다
+
+# 중급
+
+# 고급 검색엔진 기능 구축
+
+1. 자동완성 (Auto-complete) - `Edge NGram`
+    - 사용자가 `“검”`만 쳐도 `“검색엔진”`이 추천되는 기능
+2. 동의어 확장 (Synonym) - `“자동차”` → `“차”`, `“승용차”` 등 확장
+3. Kibana 시각화 연동
+    - 검색어 트렌드, 인기 키워드 등을 대시보드로 표현
+
+## 1. 자동 완성 인덱스 만들기
+
+```java
+PUT /autocomplete_post
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "autocomplete_analyzer": {
+          "tokenizer": "autocomplete_tokenizer"
+        },
+        "autocomplete_search_analyzer": {
+          "tokenizer": "standard"
+        }
+      },
+      "tokenizer": {
+        "autocomplete_tokenizer": {
+          "type": "edge_ngram",
+          "min_gram": 1,
+          "max_gram": 20,
+          "token_chars": ["letter", "digit"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "title": {
+        "type": "text",
+        "analyzer": "autocomplete_analyzer",
+        "search_analyzer": "autocomplete_search_analyzer"
+      }
+    }
+  }
+}
+```
+
+## 2. 문서 넣기
+
+```java
+POST /autocomplete_post/_doc
+{
+  "title": "검색엔진"
+}
+```
+
+## 3. 자동완성 검색
+
+- `“검”`이라고 검색했다고 가정
+
+```java
+GET /autocomplete_post/_search
+{
+  "query": {
+    "match": {
+      "title": "검"
+    }
+  }
+}
+```
+
+- 결과
+
+```java
+{
+    "took": 643,
+    "timed_out": false,
+    "_shards": {
+        "total": 1,
+        "successful": 1,
+        "skipped": 0,
+        "failed": 0
+    },
+    "hits": {
+        "total": {
+            "value": 1,
+            "relation": "eq"
+        },
+        "max_score": 0.2876821,
+        "hits": [
+            {
+                "_index": "autocomplete_post",
+                "_type": "_doc",
+                "_id": "NjxkIpYBuHtZHrl3KkEy",
+                "_score": 0.2876821,
+                "_source": {
+                    "title": "검색엔진"
+                }
+            }
+        ]
+    }
+}
+```
+
+- `“검”`이라고 검색을 했지만 `“검색엔진”`이 잘 나온 것을 알 수 있다.
+
+---
