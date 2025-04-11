@@ -26,7 +26,15 @@
 
 `Term` : 정확히 일치하는 값을 찾음 (분석 x) ⇒ 정확한 키워드 매칭
 
-`Bool` : 여러 쿼리를 조합해서 조건 검색 ⇒ `AND`, `OR`, `NOT`
+`Bool` : 여러 쿼리를 조합해서 조건 검색 
+
+`must` : AND
+
+`should` : OR (선택적으로 만족하면 점수 ↑)
+
+`must_not` : 제외 조건
+
+`filter` : 점수 영향 없이 조건 필터링
 
 ---
 
@@ -45,94 +53,12 @@
 | GET | `/_cat/health?v` | 클러스터 상태 확인 |
 | GET | `/{index}/_mapping` | 인데스 필드 구조 확인 |
 
-## 사용 예시
-
-1. 인덱스 생성
-
-```java
-PUT /posts
-```
-
-1. 문서 저장 (ID 자동 지정)
-
-```java
-POST /posts/_doc
-Content-Type: application/json
-
-{
-  "title": "Elastic 배우기",
-  "content": "쉽고 재미있다!"
-}
-```
-
-1. 문서 저장 (ID 직접 지정 url이 다름)
-
-```java
-PUT /posts/_doc/1
-Content-Type: application/json
-
-{
-  "title": "첫 번째 글",
-  "content": "우리는 Elasticsearch를 배워요"
-}
-
-```
-
-1. 문서 조회
-
-```java
-GET /posts/_doc/1
-```
-
-1. 문서 삭제
-
-```java
-DELETE /posts/_docs/1
-```
-
-1. 전체 문서 조회
-
-```java
-GET /posts/_search
-
-{
-  "query": {
-    "match_all": {}
-  }
-}
-```
-
-1. 검색 쿼리
-
-```java
-GET /posts/_search
-
-{
-  "query": {
-    "match": {
-      "title": "Elastic"
-    }
-  }
-}
-
-```
-
 ---
 
-# 예제
+# 실습
 
 > 우리 게시글 Post를 ElasticSearch에 넣는다고 가정
 > 
-
-## 예시 데이터
-
-```json
-{
-  "id": 1,
-  "title": "엘라스틱서치는 너무 빠르다",
-  "content": "카프카랑 같이 써보니까 진짜 실시간 검색이 되네"
-}
-```
 
 ## 0. 도커 구성
 
@@ -320,21 +246,278 @@ public Post createPost(Post post) {
 
 # 테스트하기
 
-## Elasticsearch
+## Kibana
 
-1. 테스트 데이터 삽입 (`Post /_doc`)
+1. 브라우저에서 [localhost:5601](http://localhost:5601) (Kibana 접속됨)
 
 ![image.png](%E1%84%8E%E1%85%A9%E1%84%80%E1%85%B3%E1%86%B8%201d181d8a13f080b49ccbf15f2b071d0c/image.png)
 
-1. 조회 (`Get /_search`)
+## 사용 예시1
 
-![image.png](%E1%84%8E%E1%85%A9%E1%84%80%E1%85%B3%E1%86%B8%201d181d8a13f080b49ccbf15f2b071d0c/image%201.png)
+1. 인덱스 생성
 
-## Kibana
+```java
+PUT /posts
+```
 
-1. 브라우저에서 [localhost:5601](http://localhost:5601) (Kibana 접속)
+1. 문서 저장 (ID 자동 지정)
 
-![image.png](%E1%84%8E%E1%85%A9%E1%84%80%E1%85%B3%E1%86%B8%201d181d8a13f080b49ccbf15f2b071d0c/image%202.png)
+```java
+POST /posts/_doc
+Content-Type: application/json
+
+{
+  "title": "Elastic 배우기",
+  "content": "쉽고 재미있다!"
+}
+```
+
+1. 문서 저장 (ID 직접 지정 url이 다름)
+
+```java
+PUT /posts/_doc/1
+Content-Type: application/json
+
+{
+  "title": "첫 번째 글",
+  "content": "우리는 Elasticsearch를 배워요"
+}
+
+```
+
+1. 문서 조회
+
+```java
+GET /posts/_doc/1
+```
+
+1. 문서 삭제
+
+```java
+DELETE /posts/_docs/1
+```
+
+1. 전체 문서 조회
+
+```java
+GET /posts/_search
+
+{
+  "query": {
+    "match_all": {}
+  }
+}
+```
+
+1. 검색 쿼리
+
+```java
+GET /posts/_search
+
+{
+  "query": {
+    "match": {
+      "title": "Elastic"
+    }
+  }
+}
+
+```
+
+## 사용 예시2
+
+> match, term, bool을 이용해 검색하기
+> 
+- 예시 데이터 저장
+    
+    ```java
+    POST http://localhost:9200/posts/_doc
+    {
+      "title": "엘라스틱서치는 놀라운 검색엔진입니다.",
+      "content": "Elasticsearch는 로그 분석, 검색, 통계에 강력합니다."
+    }
+    ```
+    
+
+### Match - 단어를 분석해서 검색
+
+```java
+GET http://localhost:9200/posts/_search
+{
+  "query": {
+    "match": {
+      "title": "검색엔진"
+    }
+  }
+}
+```
+
+- “검색엔진”은 내부적으로 “검색”+”엔진”+”입니다”으로 분석되어 찾아진다
+    - 라고 예상을 했는데 검색이 안 된다
+    - Nori분석기 또는 IK 분석기 같은 한글 전용 분석기를 사용해야 한다.
+    아래에 계속..
+
+### Term - 단어 전체가 정확히 일치할 때만 검색
+
+```java
+GET http://localhost:9200/posts/_search
+{
+  "query": {
+    "term": {
+      "title.keyword": "엘라스틱서치는 놀라운 검색엔진입니다."
+    }
+  }
+}
+```
+
+- 결과
+    - `title.keyword` 필드는 분석 없이 전체 문자열 기준 검색
+    - “정확히 이 단어와 일치하는 것만 찾아줘” : "검색할 단어나 문장”
+
+### Bool - 여러 조건을 동시에 줄 때
+
+```java
+GET http://localhost:9200/posts/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        { "match": { "title": "검색" } },
+        { "match": { "content": "Elasticsearch" } }
+      ],
+      "must_not": [
+        { "match": { "title": "느림" } }
+      ]
+    }
+  }
+}
+```
+
+---
+
+# 형태소 분석
+
+> Nori 분석기 기반 elasticsearch 인덱스 설계를 만들어보자
+> 
+- Nori Analyzer 설치를 해주자
+
+```java
+// Nori Analyzer 설치
+docker exec -it [elasticsearch-container-name] bin/elasticsearch-plugin install analysis-nori
+// 컨테이너 재실행
+docker restart [elasticsearch-container-name]
+
+```
+
+## 1. 기존 인덱스가 있다면 삭제
+
+```java
+DELETE /posts
+```
+
+## 2. Nori 분석기 기반 인덱스 만들기
+
+- `title`과 `content` 한국어 검색 최적화
+
+```java
+PUT /posts_kor
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "my_korean_analyzer": {
+          "type": "custom",
+          "tokenizer": "nori_tokenizer"
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "title": {
+        "type": "text",
+        "analyzer": "my_korean_analyzer"
+      },
+      "content": {
+        "type": "text",
+        "analyzer": "my_korean_analyzer"
+      }
+    }
+  }
+}
+```
+
+## 3. 문서 저장(POST)
+
+```java
+POST /posts_kor/_doc
+{
+  "title": "검색엔진입니다",
+  "content": "우리는 한국어 형태소 분석기로 검색 품질을 높입니다"
+}
+```
+
+## 4. 검색(GET with match)
+
+```java
+GET /posts_kor/_search
+{
+  "query": {
+    "match": {
+      "title": "검색엔진"
+    }
+  }
+}
+```
+
+## 5. 분석기 직접 테스트
+
+```java
+GET /posts_kor/_analyze
+{
+  "analyzer": "my_korean_analyzer",
+  "text": "검색엔진입니다"
+}
+```
+
+- 결과
+
+```java
+{
+    "tokens": [
+        {
+            "token": "검색",
+            "start_offset": 0,
+            "end_offset": 2,
+            "type": "word",
+            "position": 0
+        },
+        {
+            "token": "엔진",
+            "start_offset": 2,
+            "end_offset": 4,
+            "type": "word",
+            "position": 1
+        },
+        {
+            "token": "이",
+            "start_offset": 4,
+            "end_offset": 7,
+            "type": "word",
+            "position": 2
+        },
+        {
+            "token": "ᄇ니다",
+            "start_offset": 4,
+            "end_offset": 7,
+            "type": "word",
+            "position": 3
+        }
+    ]
+}
+```
+
+- Nori 분석기가 `“검색엔진입니다”`를 위와 같이 분리를 했기 때문에 `“검색엔진”` 검색에 성공했다
 
 # 요약
 
