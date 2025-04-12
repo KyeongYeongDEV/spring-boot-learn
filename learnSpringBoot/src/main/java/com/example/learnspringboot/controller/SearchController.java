@@ -24,7 +24,7 @@ public class SearchController {
     @GetMapping("/autocomplete")
     public List<String> autocomplete(@RequestParam String prefix) throws IOException {
         SearchResponse<Post> response = elasticsearchClient.search(s -> s
-                        .index("posts")
+                        .index("autocomplete_index") // 꼭 Postman에 맞춰야 함!
                         .query(q -> q
                                 .match(m -> m
                                         .field("title")
@@ -35,12 +35,9 @@ public class SearchController {
                 Post.class
         );
 
-        List<String> results = new ArrayList<>();
-        for (Hit<Post> hit : response.hits().hits()) {
-            assert hit.source() != null;
-            results.add(hit.source().
-                    getTitle());
-        }
-        return results;
+        return response.hits().hits()
+                .stream()
+                .map(hit -> hit.source().getTitle())
+                .toList();
     }
 }

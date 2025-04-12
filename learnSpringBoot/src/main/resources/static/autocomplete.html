@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Elasticsearch Autocomplete</title>
+</head>
+<body>
+<h2>Post Title Autocomplete</h2>
+<input type="text" id="searchInput" placeholder="제목 입력">
+<button onclick="search()">검색</button>
+
+<ul id="resultList"></ul>
+
+<script>
+    async function search() {
+        const query = document.getElementById("searchInput").value;
+        const list = document.getElementById("resultList");
+        list.innerHTML = "";
+
+        try {
+            const res = await fetch(`/search/autocomplete?prefix=${query}`);
+            const data = await res.json();
+
+            if (!Array.isArray(data)) {
+                throw new Error("Invalid data format");
+            }
+
+            data.forEach(title => {
+                const li = document.createElement("li");
+                li.textContent = title;
+                list.appendChild(li);
+            });
+
+        } catch (err) {
+            const li = document.createElement("li");
+            li.style.color = "red";
+            li.textContent = "검색 중 오류 발생";
+            list.appendChild(li);
+            console.error("자동완성 실패:", err);
+        }
+    }
+</script>
+
+
+</body>
+</html>
