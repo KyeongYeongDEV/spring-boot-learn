@@ -1,46 +1,82 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Elasticsearch Autocomplete</title>
+    <title>Elasticsearch 자동완성</title>
+    <style>
+        input {
+            padding: 8px;
+            font-size: 16px;
+        }
+
+        ul {
+            list-style-type: none;
+            padding-left: 0;
+            margin-top: 8px;
+            border: 1px solid #ccc;
+            max-width: 250px;
+        }
+
+        li {
+            padding: 6px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+
+        li:last-child {
+            border-bottom: none;
+        }
+
+        li:hover {
+            background-color: #f0f0f0;
+        }
+    </style>
 </head>
 <body>
-<h2>Post Title Autocomplete</h2>
+<h2>자동완성 검색</h2>
 <input type="text" id="searchInput" placeholder="제목 입력">
-<button onclick="search()">검색</button>
-
 <ul id="resultList"></ul>
 
 <script>
-    async function search() {
-        const query = document.getElementById("searchInput").value;
+    let timeout = null;
+
+    document.getElementById("searchInput").addEventListener("input", function () {
+        clearTimeout(timeout);
+        const query = this.value.trim();
         const list = document.getElementById("resultList");
         list.innerHTML = "";
 
-        try {
-            const res = await fetch(`/search/autocomplete?prefix=${query}`);
-            const data = await res.json();
-
-            if (!Array.isArray(data)) {
-                throw new Error("Invalid data format");
-            }
-
-            data.forEach(title => {
-                const li = document.createElement("li");
-                li.textContent = title;
-                list.appendChild(li);
-            });
-
-        } catch (err) {
-            const li = document.createElement("li");
-            li.style.color = "red";
-            li.textContent = "검색 중 오류 발생";
-            list.appendChild(li);
-            console.error("자동완성 실패:", err);
+        if (query.length < 1) {
+            return; // 1글자 이상 입력 시만 검색
         }
-    }
+
+        timeout = setTimeout(async () => {
+            try {
+                const res = await fetch(`/search/autocomplete?prefix=${encodeURIComponent(query)}`);
+                const data = await res.json();
+
+                if (!Array.isArray(data)) {
+                    throw new Error("응답 형식 오류");
+                }
+
+                data.forEach(title => {
+                    const li = document.createElement("li");
+                    li.textContent = title;
+                    li.onclick = () => {
+                        document.getElementById("searchInput").value = title;
+                        list.innerHTML = "";
+                    };
+                    list.appendChild(li);
+                });
+            } catch (e) {
+                const li = document.createElement("li");
+                li.textContent = "🔴 검색 중 오류 발생";
+                li.style.color = "red";
+                list.appendChild(li);
+                console.error(e);
+            }
+        }, 300); // debounce: 300ms 입력 멈춤 후 요청
+    });
 </script>
-
-
 </body>
 </html>
