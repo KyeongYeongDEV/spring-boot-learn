@@ -632,3 +632,475 @@ GET /autocomplete_post/_search
 - `“검”`이라고 검색을 했지만 `“검색엔진”`이 잘 나온 것을 알 수 있다.
 
 ---
+
+# 자동완성 UI 연동하기
+
+## 1. 자동완성 분석기 세팅하기 (Custom Analyzer 만들기)
+
+- 인덱스 매핑 정의 + edge_ngram 분석기 설정
+
+```java
+PUT /autocomplete_index
+{
+  "settings": {
+    "analysis": {
+      "tokenizer": {
+        "autocomplete_tokenizer": {
+          "type": "edge_ngram",
+          "min_gram": 1,
+          "max_gram": 20,
+          "token_chars": ["letter", "digit"]
+        }
+      },
+      "analyzer": {
+        "autocomplete_analyzer": {
+          "type": "custom",
+          "tokenizer": "autocomplete_tokenizer",
+          "filter": ["lowercase"]
+        },
+        "autocomplete_search_analyzer": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "title": {
+        "type": "text",
+        "analyzer": "autocomplete_analyzer",
+        "search_analyzer": "autocomplete_search_analyzer"
+      }
+    }
+  }
+}
+
+```
+
+- analyzer가 2개인 이유
+    - `indexing` 할 때 → `edge_ngram`으로 자른다.
+    - `검색`할 때 →일반 `standard analyzer`로 전체 단어 검색
+
+## 2. 데이터 넣기 (자동완성용 title)
+
+```java
+POST /autocomplete_index/_doc
+{
+  "title": "검색엔진"
+}
+
+POST /autocomplete_index/_doc
+{
+  "title": "검색어 추천"
+}
+
+POST /autocomplete_index/_doc
+{
+  "title": "검색창 열기"
+}
+```
+
+## 3. 검색어 prefix로 자동완성 테스트
+
+```java
+GET /autocomplete_index/_search
+{
+  "query": {
+    "match": {
+      "title": {
+        "query": "검"
+      }
+    }
+  }
+}
+```
+
+- 결과 : `검색엔진`, `검색어 추천`, `검색어 열기` 모두 검색된다.
+
+```java
+{
+    "took": 718,
+    "timed_out": false,
+    "_shards": {
+        "total": 1,
+        "successful": 1,
+        "skipped": 0,
+        "failed": 0
+    },
+    "hits": {
+        "total": {
+            "value": 3,
+            "relation": "eq"
+        },
+        "max_score": 0.14181954,
+        "hits": [
+            {
+                "_index": "autocomplete_index",
+                "_type": "_doc",
+                "_id": "Nzx7IpYBuHtZHrl3RUGN",
+                "_score": 0.14181954,
+                "_source": {
+                    "title": "검색엔진"
+                }
+            },
+            {
+                "_index": "autocomplete_index",
+                "_type": "_doc",
+                "_id": "ODx7IpYBuHtZHrl3bUGd",
+                "_score": 0.12974027,
+                "_source": {
+                    "title": "검색어 추천"
+                }
+            },
+            {
+                "_index": "autocomplete_index",
+                "_type": "_doc",
+                "_id": "OTx7IpYBuHtZHrl3fUES",
+                "_score": 0.12974027,
+                "_source": {
+                    "title": "검색어 열기"
+                }
+            }
+        ]
+    }
+}
+```
+
+- 만약에 “색” 혹은 다른 단어로 검색을 하면 결과가 안 나온다.
+
+```java
+{
+  "query": {
+    "match": {
+      "title": "색"
+    }
+  }
+}
+-- 결과
+{
+    "took": 2,
+    "timed_out": false,
+    "_shards": {
+        "total": 1,
+        "successful": 1,
+        "skipped": 0,
+        "failed": 0
+    },
+    "hits": {
+        "total": {
+            "value": 0,
+            "relation": "eq"
+        },
+        "max_score": null,
+        "hits": []
+    }
+}
+```
+
+## 4. Spring Boot 검색 API 만들기
+
+`SearchController.java`
+
+⇒ 간단한 테스트를 위한 구현이기 때문에 conroller에서 다 구현
+
+```java
+package com.example.learnspringboot.controller;
+
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch.core.SearchResponse;
+import com.example.learnspringboot.entity.Post;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+@RestController
+@RequestMapping("/search")
+@RequiredArgsConstructor
+public class SearchController {
+
+    private final ElasticsearchClient elasticsearchClient;
+
+    @GetMapping("/autocomplete")
+    public List<String> autocomplete(@RequestParam String prefix) throws IOException {
+        SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                        .index("autocomplete_index") // 꼭 Postman에 맞춰야 함!
+                        .query(q -> q
+                                .match(m -> m
+                                        .field("title")
+                                        .query(prefix)
+                                )
+                        )
+                        .size(10),
+                Post.class
+        );
+
+        return response.hits().hits()
+                .stream()
+                .map(hit -> hit.source().getTitle())
+                .toList();
+    }
+}
+
+```
+
+## 5. Config들
+
+Config 설정을 잘못하면 충돌이 일어난다.
+
+- WebConfig
+
+```java
+package com.example.learnspringboot.config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/**")
+                .allowedOrigins("*")  // 개발용으로 모든 origin 허용 (배포 시에는 도메인 지정)
+                .allowedMethods("GET", "POST", "PUT", "DELETE")
+                .allowedHeaders("*");
+	    }
+    }
+```
+
+- JpaConfig
+
+```java
+package com.example.learnspringboot.config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+
+@Configuration
+@EnableJpaRepositories(
+        basePackages = "com.example.learnspringboot.repository.jpa"
+)
+public class JpaConfig {
+}
+```
+
+- ElasticConfig
+
+```java
+package com.example.learnspringboot.config;
+
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.json.jackson.JacksonJsonpMapper;
+import co.elastic.clients.transport.ElasticsearchTransport;
+import co.elastic.clients.transport.rest_client.RestClientTransport;
+import org.apache.http.HttpHost;
+import org.elasticsearch.client.RestClient;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.elasticsearch.repository.config.EnableElasticsearchRepositories;
+
+@Configuration
+@EnableElasticsearchRepositories(
+        basePackages = "com.example.learnspringboot.repository.elastic"
+)
+public class ElasticsearchConfig {
+
+    @Value("${spring.elasticsearch.uris}")
+    private String elasticsearchUrl;
+
+    @Bean
+    public ElasticsearchClient elasticsearchClient() {
+        RestClient restClient = RestClient.builder(HttpHost.create(elasticsearchUrl)).build();
+        ElasticsearchTransport transport = new RestClientTransport(restClient, new JacksonJsonpMapper());
+        return new ElasticsearchClient(transport);
+    }
+}
+
+```
+
+## 5. Html
+
+![image.png](%E1%84%8C%E1%85%AE%E1%86%BC%E1%84%80%E1%85%B3%E1%86%B8%201d281d8a13f0800ca4ccd54d47ceae9e/image.png)
+
+```java
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Elasticsearch 자동완성</title>
+    <style>
+        input {
+            padding: 8px;
+            font-size: 16px;
+        }
+
+        ul {
+            list-style-type: none;
+            padding-left: 0;
+            margin-top: 8px;
+            border: 1px solid #ccc;
+            max-width: 250px;
+        }
+
+        li {
+            padding: 6px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+
+        li:last-child {
+            border-bottom: none;
+        }
+
+        li:hover {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+<h2>자동완성 검색</h2>
+<input type="text" id="searchInput" placeholder="제목 입력">
+<ul id="resultList"></ul>
+
+<script>
+    let timeout = null;
+
+    document.getElementById("searchInput").addEventListener("input", function () {
+        clearTimeout(timeout);
+        const query = this.value.trim();
+        const list = document.getElementById("resultList");
+        list.innerHTML = "";
+
+        if (query.length < 1) {
+            return; // 1글자 이상 입력 시만 검색
+        }
+
+        timeout = setTimeout(async () => {
+            try {
+                const res = await fetch(`/search/autocomplete?prefix=${encodeURIComponent(query)}`);
+                const data = await res.json();
+
+                if (!Array.isArray(data)) {
+                    throw new Error("응답 형식 오류");
+                }
+
+                data.forEach(title => {
+                    const li = document.createElement("li");
+                    li.textContent = title;
+                    li.onclick = () => {
+                        document.getElementById("searchInput").value = title;
+                        list.innerHTML = "";
+                    };
+                    list.appendChild(li);
+                });
+            } catch (e) {
+                const li = document.createElement("li");
+                li.textContent = "🔴 검색 중 오류 발생";
+                li.style.color = "red";
+                list.appendChild(li);
+                console.error(e);
+            }
+        }, 300); // debounce: 300ms 입력 멈춤 후 요청
+    });
+</script>
+</body>
+</html>
+
+```
+
+# 하이라이팅 (Highlighting)
+
+title 검색 시, 사용자가 입력한 키워드가 결과에서 강조되어 보이도록 만들기
+
+- 우리가 브라우저에서  검색어를 입력하면 추천 검색어에 우리가 입력한 글자와 일치하는 추천 검색어는 진한 글씨체로 보이거나 다른색으로 표시해준다 이 기능을 구현한 것이다
+- HOW?
+    - 입력한 text는 <em> 태그가 붙어 강조효과가 적용이 된다.
+
+예)
+
+```java
+입력: "김"
+결과: "⟪<em>김</em>치볶음밥⟫", "⟪<em>김</em>밥천국⟫"
+```
+
+## 1. Controller 추가
+
+```java
+ @GetMapping("/highlight")
+    public List<String> searchWithHighlight(@RequestParam String keyword) throws IOException {
+        SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                        .index("posts")
+                        .query(q -> q
+                                .match(m -> m
+                                        .field("title")
+                                        .query(keyword)
+                                )
+                        )
+                        .highlight(h -> h
+                                .fields("title", f -> f
+                                        .preTags("<em>")
+                                        .postTags("</em>")
+                                )
+                        ),
+                Post.class
+        );
+
+        List<String> results = new ArrayList<>();
+        for (Hit<Post> hit : response.hits().hits()) {
+            String highlighted;             // fallback
+            
+            // highlight된 부분 사용
+            if (hit.highlight().get("title") != null) {
+                highlighted = hit.highlight().get("title").get(0);
+            } else {
+                assert hit.source() != null;
+                highlighted = hit.source().getTitle();
+            }
+            results.add(highlighted);
+        }
+
+        return results;
+    }
+```
+
+## HTML 수정
+
+```java
+<input type="text" id="highlightInput" placeholder="검색어 입력">
+<ul id="highlightResult"></ul>
+
+<script>
+    document.getElementById("highlightInput").addEventListener("input", async (e) => {
+        const keyword = e.target.value;
+        const res = await fetch(`/search/highlight?keyword=${keyword}`);
+        const data = await res.json();
+
+        const resultList = document.getElementById("highlightResult");
+        resultList.innerHTML = "";
+
+        data.forEach(text => {
+            const li = document.createElement("li");
+            li.innerHTML = text;  // ✨ highlight 부분 <em> 태그 적용
+            resultList.appendChild(li);
+        });
+    });
+</script>
+
+```
+
+## 결과
+
+![image.png](%E1%84%8C%E1%85%AE%E1%86%BC%E1%84%80%E1%85%B3%E1%86%B8%201d281d8a13f0800ca4ccd54d47ceae9e/image%201.png)
+
+- 현재는 하이라이팅을 적용을 했다
+- 만약 다른 강조효과를 주고 싶으면 다른 태그를 적용하면 된다.
