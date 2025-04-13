@@ -2,83 +2,68 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Elasticsearch 하이라이팅 자동완성</title>
+    <title>정렬 검색</title>
     <style>
-        input {
+        input, select {
             padding: 8px;
-            font-size: 16px;
+            margin: 4px;
         }
-
         ul {
             list-style-type: none;
             padding-left: 0;
-            margin-top: 8px;
-            border: 1px solid #ccc;
-            max-width: 300px;
         }
-
         li {
             padding: 6px;
-            border-bottom: 1px solid #eee;
-            cursor: pointer;
-        }
-
-        li:last-child {
-            border-bottom: none;
-        }
-
-        li:hover {
-            background-color: #f0f0f0;
-        }
-
-        em {
-            font-style: normal;
-            font-weight: bold;
-            background-color: yellow;
         }
     </style>
 </head>
 <body>
-<h2>하이라이팅 자동완성 검색</h2>
-<input type="text" id="searchInput" placeholder="제목 입력">
+<h2>정렬 기반 검색</h2>
+
+<input id="keyword" placeholder="검색어 입력">
+<select id="sortBy">
+    <option value="title">제목(title)</option>
+    <option value="views">조회수(views)</option>
+    <option value="createdAt">작성일(createdAt)</option>
+</select>
+<select id="direction">
+    <option value="asc">오름차순(asc)</option>
+    <option value="desc">내림차순(desc)</option>
+</select>
+<button onclick="sortedSearch()">검색</button>
+
 <ul id="resultList"></ul>
 
 <script>
-    let timeout = null;
+    async function sortedSearch() {
+        const keyword = document.getElementById("keyword").value;
+        const sortBy = document.getElementById("sortBy").value;
+        const direction = document.getElementById("direction").value;
+        const resultList = document.getElementById("resultList");
+        resultList.innerHTML = "";
 
-    document.getElementById("searchInput").addEventListener("input", function () {
-        clearTimeout(timeout);
-        const query = this.value.trim();
-        const list = document.getElementById("resultList");
-        list.innerHTML = "";
+        try {
+            const res = await fetch(`/search/sorted?keyword=${encodeURIComponent(keyword)}&sortBy=${sortBy}&direction=${direction}`);
+            const data = await res.json();
 
-        if (query.length < 1) return;
-
-        timeout = setTimeout(async () => {
-            try {
-                const res = await fetch(`/search/highlight?keyword=${encodeURIComponent(query)}`);
-                const data = await res.json();
-
-                if (!Array.isArray(data)) throw new Error("응답 형식 오류");
-
-                data.forEach(highlighted => {
-                    const li = document.createElement("li");
-                    li.innerHTML = highlighted; // highlight된 HTML 그대로 삽입
-                    li.onclick = () => {
-                        document.getElementById("searchInput").value = li.textContent;
-                        list.innerHTML = "";
-                    };
-                    list.appendChild(li);
-                });
-            } catch (e) {
-                const li = document.createElement("li");
-                li.textContent = "🔴 검색 중 오류 발생";
-                li.style.color = "red";
-                list.appendChild(li);
-                console.error(e);
+            if (!Array.isArray(data)) {
+                throw new Error("응답이 배열이 아님: " + JSON.stringify(data));
             }
-        }, 300); // 300ms 디바운스
-    });
+
+            data.forEach(title => {
+                const li = document.createElement("li");
+                li.textContent = title;
+                resultList.appendChild(li);
+            });
+        } catch (err) {
+            const li = document.createElement("li");
+            li.textContent = "🔴 검색 중 오류 발생";
+            li.style.color = "red";
+            resultList.appendChild(li);
+            console.error(err);
+        }
+    }
 </script>
+
 </body>
 </html>
