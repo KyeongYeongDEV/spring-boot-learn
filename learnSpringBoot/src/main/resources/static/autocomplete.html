@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>정렬 검색</title>
+    <title>정렬 및 페이징 검색</title>
     <style>
         input, select {
             padding: 8px;
@@ -18,32 +18,46 @@
     </style>
 </head>
 <body>
-<h2>정렬 기반 검색</h2>
+<h2>📚 정렬 및 페이징 검색</h2>
 
+<!-- 검색어 입력 -->
 <input id="keyword" placeholder="검색어 입력">
+
+<!-- 정렬 필드 선택 -->
 <select id="sortBy">
     <option value="title">제목(title)</option>
     <option value="views">조회수(views)</option>
     <option value="createdAt">작성일(createdAt)</option>
 </select>
+
+<!-- 정렬 방향 선택 -->
 <select id="direction">
     <option value="asc">오름차순(asc)</option>
     <option value="desc">내림차순(desc)</option>
 </select>
-<button onclick="sortedSearch()">검색</button>
 
+<!-- 페이지 번호 및 사이즈 설정 -->
+<input id="page" type="number" value="0" min="0" style="width:60px" />
+<input id="size" type="number" value="10" min="1" style="width:60px" />
+
+<!-- 검색 버튼 -->
+<button onclick="pagedSearch()">검색</button>
+
+<!-- 결과 출력 -->
 <ul id="resultList"></ul>
 
 <script>
-    async function sortedSearch() {
+    async function pagedSearch() {
         const keyword = document.getElementById("keyword").value;
         const sortBy = document.getElementById("sortBy").value;
         const direction = document.getElementById("direction").value;
+        const page = document.getElementById("page").value;
+        const size = document.getElementById("size").value;
         const resultList = document.getElementById("resultList");
         resultList.innerHTML = "";
 
         try {
-            const res = await fetch(`/search/sorted?keyword=${encodeURIComponent(keyword)}&sortBy=${sortBy}&direction=${direction}`);
+            const res = await fetch(`/search/paged?keyword=${encodeURIComponent(keyword)}&sortBy=${sortBy}&direction=${direction}&page=${page}&size=${size}`);
             const data = await res.json();
 
             if (!Array.isArray(data)) {

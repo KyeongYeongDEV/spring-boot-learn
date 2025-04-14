@@ -88,7 +88,7 @@ public class SearchController {
 
         // Elasticsearch 정렬 쿼리 실행
         SearchResponse<Post> response = elasticsearchClient.search(s -> s
-                        .index("autocomplete_index") // ✅ 반드시 존재하는 인덱스
+                        .index("autocomplete_index")
                         .query(q -> q
                                 .match(m -> m
                                         .field("title")
@@ -113,6 +113,47 @@ public class SearchController {
                 .toList();
     }
 
+    @GetMapping("/paged")
+    public List<String> pagedSearch(
+            @RequestParam String keyword,                      // 검색할 키워드 (title 필드 기준)
+            @RequestParam(defaultValue = "0") int page,        // 현재 페이지 번호 (0부터 시작)
+            @RequestParam(defaultValue = "10") int size,       // 한 페이지에 보여줄 문서 수
+            @RequestParam(defaultValue = "createdAt") String sortBy, // 정렬할 필드 (예: createdAt, title 등)
+            @RequestParam(defaultValue = "desc") String direction     // 정렬 방향 (asc or desc)
+    ) throws IOException {
+
+        // Elasticsearch에서 사용할 from 값 계산 (페이지 * 사이즈)
+        int from = page * size;
+
+        // Elasticsearch 검색 요청 수행
+        SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                        .index("autocomplete_index")         // 검색 대상 인덱스 (실제 인덱스명 사용!)
+                        .from(from)                          // 몇 번째부터 시작할지 지정 (페이징)
+                        .size(size)                          // 한 번에 가져올 문서 수
+                        .query(q -> q                        // 검색 쿼리 정의
+                                .match(m -> m
+                                        .field("title")      // title 필드를 기준으로
+                                        .query(keyword)      // 사용자가 입력한 키워드로 match 검색
+                                )
+                        )
+                        .sort(so -> so                       // 정렬 조건 정의
+                                .field(f -> f
+                                        .field(sortBy)       // 사용자가 선택한 필드로 정렬
+                                        .order("asc".equalsIgnoreCase(direction) // 정렬 방향 설정
+                                                ? SortOrder.Asc
+                                                : SortOrder.Desc)
+                                )
+                        ),
+                Post.class // 결과를 매핑할 클래스 지정
+        );
+
+        // 검색 결과에서 Post 객체의 title 필드만 추출하여 반환
+        List<String> results = response.hits().hits().stream()
+                .map(hit -> hit.source().getTitle())
+                .toList();
+
+        return results;
+    }
 
 
 }
