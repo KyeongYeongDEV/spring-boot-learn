@@ -155,5 +155,47 @@ public class SearchController {
         return results;
     }
 
+    @GetMapping("/multifield")
+    public List<String> multiFieldSearch(
+            @RequestParam String keyword
+    ) throws IOException {
+        // Elasticsearch multi_match 쿼리
+        SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                        .index("autocomplete_index") // 사용 중인 인덱스 이름
+                        .query(q -> q
+                                .multiMatch(m -> m
+                                        .query(keyword)                         // 사용자가 입력한 검색어
+                                        .fields("title", "content")             // 동시에 검색할 필드들
+                                )
+                        )
+                        .size(10),
+                Post.class
+        );
+
+        // 검색 결과에서 title만 리스트로 추출
+        return response.hits().hits().stream()
+                .map(hit -> hit.source().getTitle())
+                .toList();
+    }
+    @GetMapping("/boost")
+    public List<String> boostedSearch(@RequestParam String keyword) throws IOException {
+        SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                        .index("autocomplete_index")
+                        .query(q -> q
+                                .multiMatch(m -> m
+                                        .query(keyword)
+                                        .fields("title^3", "content") // title에 3배 가중치 적용
+                                )
+                        )
+                        .size(10),
+                Post.class
+        );
+
+        return response.hits().hits().stream()
+                .map(hit -> hit.source().getTitle())
+                .toList();
+    }
+
+
 
 }
