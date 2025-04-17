@@ -196,6 +196,34 @@ public class SearchController {
                 .toList();
     }
 
+    @GetMapping("/popular")
+    public List<String> popularSearch(@RequestParam String keyword) throws IOException {
+        SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                        .index("autocomplete_index")
+                        .query(q -> q
+                                .bool(b -> b
+                                        .must(m -> m
+                                                .multiMatch(mm -> mm
+                                                        .query(keyword)
+                                                        .fields("title", "content")
+                                                )
+                                        )
+                                        .filter(f -> f
+                                                .range(r -> r
+                                                        .field("views")
+                                                        .gt("100") // 조회수 100 초과 조건
+                                                )
+                                        )
+                                )
+                        )
+                        .size(10),
+                Post.class
+        );
+
+        return response.hits().hits().stream()
+                .map(hit -> hit.source().getTitle())
+                .toList();
+    }
 
 
 }
