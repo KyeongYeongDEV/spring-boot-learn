@@ -525,6 +525,7 @@ GET /posts_kor/_analyze
 - Kibana라는 서사한테 물어보면 금방 찾아준다.
 - 실시간으로 저장하고, 빠르게 검색하는데 최고다
 
+
 # 중급
 
 # 고급 검색엔진 기능 구축
@@ -1104,3 +1105,555 @@ title 검색 시, 사용자가 입력한 키워드가 결과에서 강조되어 
 
 - 현재는 하이라이팅을 적용을 했다
 - 만약 다른 강조효과를 주고 싶으면 다른 태그를 적용하면 된다.
+
+---
+
+# 검색 결과 정렬
+
+기본적으로 match 쿼리는 _score 순서 (= relevance 기반 ) 로 정렬된다.
+
+하지만 필요에 따라 날짜순, 조회순, 알파벳순 등으로 정렬이 가능하다.
+
+## 1. Entity 수정
+
+- 우리는 최신순과 조회수순으로 정렬하는 것을 할 것이다
+
+```java
+package com.example.learnspringboot.entity;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import lombok.*;
+import org.springframework.data.elasticsearch.annotations.Document;
+
+@Entity
+@Getter @Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@JsonIgnoreProperties(ignoreUnknown = true)
+@Document(indexName = "posts")
+public class Post {
+    @Id
+    private String id;
+    private String title;
+    private String content;
+    private int views;
+    private String createdAt;
+}
+
+```
+
+- 기존 Elasticsearch Index는 삭제해야 한다.
+
+```java
+DELETE http://localhost:9200/autocomplete_index/
+```
+
+- 변경된 Entity에 맞게 새로운 인덱스를 생성한다.
+
+```java
+PUT http://localhost:9200/autocomplete_index
+
+{
+  "mappings": {
+    "properties": {
+      "title": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "views": {
+        "type": "integer"
+      },
+      "createdAt": {
+        "type": "date"
+      },
+      "content": {
+        "type": "text"
+      },
+      "id": {
+        "type": "keyword"
+      }
+    }
+  }
+}
+
+```
+
+## 2. Controller 추가
+
+```java
+    @GetMapping("/sorted")
+    public List<String> sortedSearch(
+            @RequestParam String keyword,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String direction
+    ) throws IOException {
+
+        // Elasticsearch 정렬 쿼리 실행
+        SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                        .index("autocomplete_index") 
+                        .query(q -> q
+                                .match(m -> m
+                                        .field("title")
+                                        .query(keyword)
+                                )
+                        )
+                        .sort(so -> so
+                                .field(f -> f
+                                        .field(sortBy)
+                                        .order("asc".equalsIgnoreCase(direction)
+                                                ? SortOrder.Asc
+                                                : SortOrder.Desc)
+                                )
+                        )
+                        .size(10),
+                Post.class
+        );
+
+        // 결과 반환: title 목록
+        return response.hits().hits().stream()
+                .map(hit -> hit.source().getTitle())
+                .toList();
+    }
+
+```
+
+## 3. HTML
+
+```java
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>정렬 검색</title>
+    <style>
+        input, select {
+            padding: 8px;
+            margin: 4px;
+        }
+        ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        li {
+            padding: 6px;
+        }
+    </style>
+</head>
+<body>
+<h2>정렬 기반 검색</h2>
+
+<input id="keyword" placeholder="검색어 입력">
+<select id="sortBy">
+    <option value="title">제목(title)</option>
+    <option value="views">조회수(views)</option>
+    <option value="createdAt">작성일(createdAt)</option>
+</select>
+<select id="direction">
+    <option value="asc">오름차순(asc)</option>
+    <option value="desc">내림차순(desc)</option>
+</select>
+<button onclick="sortedSearch()">검색</button>
+
+<ul id="resultList"></ul>
+
+<script>
+    async function sortedSearch() {
+        const keyword = document.getElementById("keyword").value;
+        const sortBy = document.getElementById("sortBy").value;
+        const direction = document.getElementById("direction").value;
+        const resultList = document.getElementById("resultList");
+        resultList.innerHTML = "";
+
+        try {
+            const res = await fetch(`/search/sorted?keyword=${encodeURIComponent(keyword)}&sortBy=${sortBy}&direction=${direction}`);
+            const data = await res.json();
+
+            if (!Array.isArray(data)) {
+                throw new Error("응답이 배열이 아님: " + JSON.stringify(data));
+            }
+
+            data.forEach(title => {
+                const li = document.createElement("li");
+                li.textContent = title;
+                resultList.appendChild(li);
+            });
+        } catch (err) {
+            const li = document.createElement("li");
+            li.textContent = "🔴 검색 중 오류 발생";
+            li.style.color = "red";
+            resultList.appendChild(li);
+            console.error(err);
+        }
+    }
+</script>
+
+</body>
+</html>
+
+```
+
+## 결과
+
+- 원하는대로 정렬이 되는 것을 확인할 수 있다
+
+![image.png](%E1%84%8C%E1%85%AE%E1%86%BC%E1%84%80%E1%85%B3%E1%86%B8%201d281d8a13f0800ca4ccd54d47ceae9e/image%202.png)
+
+![image.png](%E1%84%8C%E1%85%AE%E1%86%BC%E1%84%80%E1%85%B3%E1%86%B8%201d281d8a13f0800ca4ccd54d47ceae9e/image%203.png)
+
+![image.png](%E1%84%8C%E1%85%AE%E1%86%BC%E1%84%80%E1%85%B3%E1%86%B8%201d281d8a13f0800ca4ccd54d47ceae9e/image%204.png)
+
+![image.png](%E1%84%8C%E1%85%AE%E1%86%BC%E1%84%80%E1%85%B3%E1%86%B8%201d281d8a13f0800ca4ccd54d47ceae9e/image%205.png)
+
+# 페이징 처리
+
+## 1. Controller
+
+```java
+    @GetMapping("/paged")
+    public List<String> pagedSearch(
+            @RequestParam String keyword,                      // 검색할 키워드 (title 필드 기준)
+            @RequestParam(defaultValue = "0") int page,        // 현재 페이지 번호 (0부터 시작)
+            @RequestParam(defaultValue = "10") int size,       // 한 페이지에 보여줄 문서 수
+            @RequestParam(defaultValue = "createdAt") String sortBy, // 정렬할 필드 (예: createdAt, title 등)
+            @RequestParam(defaultValue = "desc") String direction     // 정렬 방향 (asc or desc)
+    ) throws IOException {
+
+        // Elasticsearch에서 사용할 from 값 계산 (페이지 * 사이즈)
+        int from = page * size;
+
+        // Elasticsearch 검색 요청 수행
+        SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                        .index("autocomplete_index")         // 검색 대상 인덱스 (실제 인덱스명 사용!)
+                        .from(from)                          // 몇 번째부터 시작할지 지정 (페이징)
+                        .size(size)                          // 한 번에 가져올 문서 수
+                        .query(q -> q                        // 검색 쿼리 정의
+                                .match(m -> m
+                                        .field("title")      // title 필드를 기준으로
+                                        .query(keyword)      // 사용자가 입력한 키워드로 match 검색
+                                )
+                        )
+                        .sort(so -> so                       // 정렬 조건 정의
+                                .field(f -> f
+                                        .field(sortBy)       // 사용자가 선택한 필드로 정렬
+                                        .order("asc".equalsIgnoreCase(direction) // 정렬 방향 설정
+                                                ? SortOrder.Asc
+                                                : SortOrder.Desc)
+                                )
+                        ),
+                Post.class // 결과를 매핑할 클래스 지정
+        );
+
+        // 검색 결과에서 Post 객체의 title 필드만 추출하여 반환
+        List<String> results = response.hits().hits().stream()
+                .map(hit -> hit.source().getTitle())
+                .toList();
+
+        return results;
+    }
+```
+
+## 2. HTML
+
+```java
+<h2>페이징 검색</h2>
+<input id="keyword" placeholder="검색어 입력">
+<select id="sortBy">
+    <option value="title">제목(title)</option>
+    <option value="views">조회수(views)</option>
+    <option value="createdAt">작성일(createdAt)</option>
+</select>
+<select id="direction">
+    <option value="asc">오름차순(asc)</option>
+    <option value="desc">내림차순(desc)</option>
+</select>
+<input id="page" type="number" value="0" min="0" style="width:60px" />
+<input id="size" type="number" value="10" min="1" style="width:60px" />
+<button onclick="pagedSearch()">검색</button>
+
+<ul id="resultList"></ul>
+
+<script>
+    async function pagedSearch() {
+        const keyword = document.getElementById("keyword").value;
+        const sortBy = document.getElementById("sortBy").value;
+        const direction = document.getElementById("direction").value;
+        const page = document.getElementById("page").value;
+        const size = document.getElementById("size").value;
+        const resultList = document.getElementById("resultList");
+        resultList.innerHTML = "";
+
+        try {
+            const res = await fetch(`/search/paged?keyword=${encodeURIComponent(keyword)}&sortBy=${sortBy}&direction=${direction}&page=${page}&size=${size}`);
+            const data = await res.json();
+
+            if (!Array.isArray(data)) {
+                throw new Error("응답이 배열이 아님: " + JSON.stringify(data));
+            }
+
+            data.forEach(title => {
+                const li = document.createElement("li");
+                li.textContent = title;
+                resultList.appendChild(li);
+            });
+        } catch (err) {
+            const li = document.createElement("li");
+            li.textContent = "🔴 검색 중 오류 발생";
+            li.style.color = "red";
+            resultList.appendChild(li);
+            console.error(err);
+        }
+    }
+</script>
+
+```
+
+# 다중 필드 검색
+
+- 하나의 검색어로 `title`, `content` 두 필드를 동시에 검색하는 기능!
+
+```java
+    @GetMapping("/multifield")
+    public List<String> multiFieldSearch(
+            @RequestParam String keyword
+    ) throws IOException {
+        // Elasticsearch multi_match 쿼리
+        SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                        .index("autocomplete_index") // 사용 중인 인덱스 이름
+                        .query(q -> q
+                                .multiMatch(m -> m
+                                        .query(keyword)                         // 사용자가 입력한 검색어
+                                        .fields("title", "content")             // 동시에 검색할 필드들
+                                )
+                        )
+                        .size(10),
+                Post.class
+        );
+
+        // 검색 결과에서 title만 리스트로 추출
+        return response.hits().hits().stream()
+                .map(hit -> hit.source().getTitle())
+                .toList();
+    }
+```
+
+# 가중치 검색 - boots 적용
+
+- `multi_match` 검색시 `title` 필드에 더 높은 점수를 부여 → 검색 결과의 `우선순위`를 조절함
+
+```java
+@GetMapping("/boost")
+public List<String> boostedSearch(@RequestParam String keyword) throws IOException {
+    SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                    .index("autocomplete_index")
+                    .query(q -> q
+                            .multiMatch(m -> m
+                                    .query(keyword)
+                                    .fields("title^3", "content") // title에 3배 가중치 적용
+                            )
+                    )
+                    .size(10),
+            Post.class
+    );
+
+    return response.hits().hits().stream()
+            .map(hit -> hit.source().getTitle())
+            .toList();
+}
+
+```
+
+- must : 검색 조건 (검색어)
+- filter : 결과 제한 (조회수, 날짜 등)
+- should : 점수 올려주는 조건 (선택적 boost)
+- must_not  : 제외 조건
+
+# 조회수 필터링
+
+- 조회수가 일정 수치 이상인 문서만 검색
+
+```java
+@GetMapping("/popular")
+public List<String> popularSearch(@RequestParam String keyword) throws IOException {
+    SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                    .index("autocomplete_index")
+                    .query(q -> q
+                            .bool(b -> b
+                                    .must(m -> m
+                                            .multiMatch(mm -> mm
+                                                    .query(keyword)
+                                                    .fields("title", "content")
+                                            )
+                                    )
+                                    .filter(f -> f
+                                            .range(r -> r
+                                                    .field("views")
+                                                    .gt("100") // 조회수 100 초과 조건
+                                            )
+                                    )
+                            )
+                    )
+                    .size(10),
+            Post.class
+    );
+
+    return response.hits().hits().stream()
+            .map(hit -> hit.source().getTitle())
+            .toList();
+}
+
+```
+
+# 날짜 필터링
+
+- 문서의 createdAt 날짜가 최근 30일 이내인 경우만 검색
+    - `range` 쿼리 사용
+- `createdAt` 이 문자열이 아닌 date 포맷(yyyy-mm-dd)으로 인덱싱되어 있어야 함
+
+```java
+@GetMapping("/recent")
+public List<String> recentSearch(@RequestParam String keyword) throws IOException {
+    // 오늘 날짜 기준으로 30일 전 날짜 계산
+    String thirtyDaysAgo = java.time.LocalDate.now().minusDays(30).toString(); // 예: "2024-03-15"
+
+    SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                    .index("autocomplete_index")
+                    .query(q -> q
+                            .bool(b -> b
+                                    .must(m -> m
+                                            .multiMatch(mm -> mm
+                                                    .query(keyword)
+                                                    .fields("title", "content")
+                                            )
+                                    )
+                                    .filter(f -> f
+                                            .range(r -> r
+                                                    .field("createdAt")
+                                                    .gte(thirtyDaysAgo) // 최근 30일만
+                                            )
+                                    )
+                            )
+                    )
+                    .size(10),
+            Post.class
+    );
+
+    return response.hits().hits().stream()
+            .map(hit -> hit.source().getTitle())
+            .toList();
+}
+
+```
+
+# 복합 조건 검색 API
+
+1. `multi_match` : `title`과 `content` 동시 검색
+2. `boost` : `title ^ 2` 가중치 적용
+3. `조회수 필터` : `views` > 100
+4. `날짜 필터` : 최근 30일 (`createdAt` ≥ `today` - 30일)
+5. `정렬` : `views` 내림차순
+
+```java
+@GetMapping("/complex")
+public List<String> complexSearch(
+        @RequestParam String keyword
+) throws IOException {
+    // 최근 30일 기준 날짜 계산
+    String thirtyDaysAgo = java.time.LocalDate.now().minusDays(30).toString();
+
+    SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                    .index("autocomplete_index")
+                    .query(q -> q
+                            .bool(b -> b
+                                    // 필수 검색어 조건 (multi_match + boost)
+                                    .must(m -> m
+                                            .multiMatch(mm -> mm
+                                                    .query(keyword)
+                                                    .fields("title^2", "content") // title에 가중치 2
+                                            )
+                                    )
+                                    // 조회수 필터
+                                    .filter(f -> f
+                                            .range(r -> r
+                                                    .field("views")
+                                                    .gt("100") // 100 초과
+                                            )
+                                    )
+                                    // 날짜 필터 (최근 30일 이내)
+                                    .filter(f -> f
+                                            .range(r -> r
+                                                    .field("createdAt")
+                                                    .gte(thirtyDaysAgo) // 30일 전부터 오늘까지
+                                            )
+                                    )
+                            )
+                    )
+                    // 조회수 기준 내림차순 정렬
+                    .sort(so -> so
+                            .field(f -> f
+                                    .field("views")
+                                    .order(SortOrder.Desc)
+                            )
+                    )
+                    .size(10),
+            Post.class
+    );
+
+    // 결과에서 title 필드만 추출하여 반환
+    return response.hits().hits().stream()
+            .map(hit -> hit.source().getTitle())
+            .toList();
+}
+
+```
+
+---
+
+- 데이터 삽입
+
+```
+{
+  "id": "1111",
+  "title": "Elasticsearch Boost 적용하기",
+  "content": "title 필드에 가중치를 설정해서 검색 정확도를 높인다",
+  "views": 150,
+  "createdAt": "2025-04-10"
+}
+
+```
+
+```
+{
+  "id": "1112",
+  "title": "Spring Data Elasticsearch 완전 정복",
+  "content": "Elasticsearch에 대한 내용은 content에도 포함",
+  "views": 90,
+  "createdAt": "2025-03-05"
+}
+
+```
+
+```java
+
+{
+  "id": "1113",
+  "title": "인기 게시글 Top10",
+  "content": "조회수가 높은 게시글만 모았습니다",
+  "views": 500,
+  "createdAt": "2025-03-20"
+}
+
+```
+
+---
+
+- 결과
+    - `title 가중치`와 `최근 30일`에 작성된 게시글 그리고 `조회수`를 모두 비교해보았을 때 입력한 데이터 중 충족하는 하나의 결과가 나왔다
+
+![image.png](%E1%84%8C%E1%85%AE%E1%86%BC%E1%84%80%E1%85%B3%E1%86%B8%201d281d8a13f0800ca4ccd54d47ceae9e/image%206.png)
