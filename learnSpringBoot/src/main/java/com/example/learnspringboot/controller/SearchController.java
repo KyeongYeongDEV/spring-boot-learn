@@ -3,6 +3,10 @@ package com.example.learnspringboot.controller;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.mapping.FieldType;
+import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
+import co.elastic.clients.elasticsearch._types.query_dsl.MultiMatchQuery;
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import co.elastic.clients.elasticsearch._types.query_dsl.RangeQuery;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.json.JsonData;
@@ -14,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -308,4 +313,62 @@ public class SearchController {
                 .toList();
     }
 
+    @GetMapping("/querydsl")
+    public List<String> queryDslSearch(
+            @RequestParam String keyword,
+            @RequestParam(defaultValue = "100") int minViews,
+            @RequestParam(defaultValue = "30") int daysAgo,
+            @RequestParam(defaultValue = "views") String sortBy,
+            @RequestParam(defaultValue = "desc") String direction
+    ) throws IOException {
+        // 30일 전 날짜
+        String dateLimit = LocalDate.now().minusDays(daysAgo).toString();
+
+        // 검색어 조건 (multi_match + boost)
+        Query keywordQuery = MultiMatchQuery.of(mm -> mm
+                .query(keyword)
+                .fields("title^2", "content")
+        )._toQuery();
+
+        // 조회수 조건
+        Query viewsFilter = RangeQuery.of(r -> r
+                .field("views")
+                .gt(JsonData.of(minViews))
+        )._toQuery();
+
+        // 날짜 조건
+        Query dateFilter = RangeQuery.of(r -> r
+                .field("createdAt")
+                .gte(JsonData.fromJson(dateLimit))
+        )._toQuery();
+
+        // bool 조합
+        Query finalQuery = BoolQuery.of(b -> b
+                .must(keywordQuery)
+                .filter(viewsFilter)
+                .filter(dateFilter)
+        )._toQuery();
+
+        // 정렬 방향
+        SortOrder sortOrder = "asc".equalsIgnoreCase(direction) ? SortOrder.Asc : SortOrder.Desc;
+
+        // 최종 검색 요청
+        SearchResponse<Post> response = elasticsearchClient.search(s->s
+                .index("autocomplete_index")
+                .query(finalQuery)
+                .sort(so -> so
+                        .field(f -> f
+                                .field(sortBy)
+                                .order(sortOrder)
+                        )
+                ).size(10),
+                Post.class
+        );
+
+        List<String> result = response.hits().hits().stream()
+                .map(hit -> hit.source().getTitle())
+                .toList();
+
+        return result;
+    }
 }
