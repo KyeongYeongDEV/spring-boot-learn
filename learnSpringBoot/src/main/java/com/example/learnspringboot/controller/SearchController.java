@@ -5,6 +5,7 @@ import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.mapping.FieldType;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.json.JsonData;
 import com.example.learnspringboot.entity.Post;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -211,7 +212,7 @@ public class SearchController {
                                         .filter(f -> f
                                                 .range(r -> r
                                                         .field("views")
-                                                        .gt("100") // 조회수 100 초과 조건
+                                                        .gt(JsonData.fromJson("100")) // 조회수 100 초과 조건
                                                 )
                                         )
                                 )
@@ -243,7 +244,7 @@ public class SearchController {
                                         .filter(f -> f
                                                 .range(r -> r
                                                         .field("createdAt")
-                                                        .gte(thirtyDaysAgo) // 최근 30일만
+                                                        .gte(JsonData.fromJson(thirtyDaysAgo)) // 최근 30일만
                                                 )
                                         )
                                 )
@@ -252,6 +253,56 @@ public class SearchController {
                 Post.class
         );
 
+        return response.hits().hits().stream()
+                .map(hit -> hit.source().getTitle())
+                .toList();
+    }
+    @GetMapping("/complex")
+    public List<String> complexSearch(
+            @RequestParam String keyword
+    ) throws IOException {
+        // 최근 30일 기준 날짜 계산
+        String thirtyDaysAgo = java.time.LocalDate.now().minusDays(30).toString();
+
+        SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                        .index("autocomplete_index")
+                        .query(q -> q
+                                .bool(b -> b
+                                        // 필수 검색어 조건 (multi_match + boost)
+                                        .must(m -> m
+                                                .multiMatch(mm -> mm
+                                                        .query(keyword)
+                                                        .fields("title^2", "content") // title에 가중치 2
+                                                )
+                                        )
+                                        // 조회수 필터
+                                        .filter(f -> f
+                                                .range(r -> r
+                                                        .field("views")
+                                                        .gt(JsonData.fromJson("100")) // 100 초과
+                                                )
+                                        )
+                                        // 날짜 필터 (최근 30일 이내)
+                                        .filter(f -> f
+                                                .range(r -> r
+                                                        .field("createdAt")
+                                                        .gte(JsonData.fromJson(thirtyDaysAgo)) // 30일 전부터 오늘까지
+                                                )
+                                        )
+                                )
+                        )
+                        // 조회수 기준 내림차순 정렬
+                        .sort(so -> so
+                                .field(f -> f
+                                        .field("views")
+                                        .order(SortOrder.Desc)
+                                )
+                        )
+                        .size(10),
+                Post.class
+        );
+
+        // 결과에서 title 필드만 추출하여 반환
         return response.hits().hits().stream()
                 .map(hit -> hit.source().getTitle())
                 .toList();
