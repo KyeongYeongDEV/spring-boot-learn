@@ -2,25 +2,23 @@ package com.example.learnspringboot.controller;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.SortOrder;
-import co.elastic.clients.elasticsearch._types.mapping.FieldType;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.MultiMatchQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch._types.query_dsl.RangeQuery;
+import com.example.learnspringboot.dto.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.json.JsonData;
 import com.example.learnspringboot.entity.Post;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/search")
@@ -371,4 +369,58 @@ public class SearchController {
 
         return result;
     }
+
+    @PostMapping("/dynamic")
+    public List<String> dynamicQuery(@RequestBody SearchRequest req) throws IOException {
+        List<Query> filters = new ArrayList<>();
+
+        // 검색어 조건
+        Query keywordQuery = MultiMatchQuery.of(mm -> mm
+                .query(req.getKeyword())
+                .fields("title^2", "content")
+        )._toQuery();
+
+        // 조회수 조건 (옵션)
+        if (req.getMinViews() != null) {
+            filters.add(RangeQuery.of(r -> r
+                    .field("views")
+                    .gt(JsonData.of(req.getMinViews()))
+            )._toQuery());
+        }
+
+        // 날짜 필터 (옵션)
+        if (req.getDateAfter() != null) {
+            filters.add(RangeQuery.of(r -> r
+                    .field("createdAt")
+                    .gte(JsonData.of(req.getDateAfter()))
+            )._toQuery());
+        }
+
+        // 전체 조합
+        Query finalQuery = BoolQuery.of(b -> b
+                .must(keywordQuery)
+                .filter(filters)
+        )._toQuery();
+
+        // 정렬
+        SortOrder order = "asc".equalsIgnoreCase(req.getDirection()) ? SortOrder.Asc : SortOrder.Desc;
+
+        SearchResponse<Post> response = elasticsearchClient.search(s -> s
+                        .index("autocomplete_index")
+                        .query(finalQuery)
+                        .sort(so -> so
+                                .field(f -> f
+                                        .field(Optional.ofNullable(req.getSortBy()).orElse("views"))
+                                        .order(order)
+                                )
+                        )
+                        .size(10),
+                Post.class
+        );
+
+        return response.hits().hits().stream()
+                .map(hit -> hit.source().getTitle())
+                .toList();
+    }
+
 }
